@@ -12,12 +12,17 @@ using ClusteringProject
 end
 
 # ╔═╡ f58b4537-55e4-458f-b5f7-ff63415bbcfa
-using GraphRecipes, Plots, StatsBase, Distributions, Statistics, StatsPlots, SpecialFunctions, LogExpFunctions, Clustering, ColorTypes, Clustering, DataStructures, Distances, LinearAlgebra, Hungarian
+using GraphRecipes, Plots, StatsBase, Distributions, Statistics, StatsPlots, SpecialFunctions, LogExpFunctions, Clustering, ColorTypes, Clustering, DataStructures, Distances, LinearAlgebra, Hungarian, BenchmarkTools, Profile, ProfileView
 
 # ╔═╡ 7aa9240b-da4b-4495-89a8-246ac4af6f83
 md"""
 # Network Data Mining: 
 ### Clustering of heterogeneous populations of networks
+"""
+
+# ╔═╡ 022aa141-6c7d-4fb6-89f2-f0ff35bd7d4a
+md"""
+(FMM https://arxiv.org/abs/2107.07489, Young et Al.)
 """
 
 # ╔═╡ 5d1bb53f-82af-4091-ab78-10d1708aba28
@@ -42,23 +47,23 @@ no_nodes = 50;
 
 # ╔═╡ 099e82cc-2bde-45e9-ab2c-792374a1976c
 # Number of network observations
-no_obs = 100;
+no_obs = 200;
 
 # ╔═╡ 5e9467e0-c0f3-4a82-be7c-7b0d15ca5d62
 # Network density
-ρ = 0.01;
+ρ = 0.02;
 
 # ╔═╡ 836e2a16-4ebb-47ca-8ba1-011eef5243a2
 # Range of values the FMM gibbs sampling algorithm is run over
-Ks = 1:8;
+Ks = 2:5;
 
 # ╔═╡ 66ccf09c-476c-406c-b9d5-bc81c8fdf78e
 # Iterations
-τ = 200;
+τ = 250;
 
 # ╔═╡ 4bfd7e61-de33-43a6-8360-2acf627a8866
 # Concentration parameter for Dirichlet process 
-alpha_val = 0.005;
+alpha_val = 1;
 
 # ╔═╡ 92f7dc15-ebc0-4fb1-b71d-a776a18488bb
 # Base distribution for dirichlet process 
@@ -100,39 +105,51 @@ As_point_estimates, k_likelihoods, cluster_counts, As_samples, Zs_samples, αs_s
 # ╔═╡ ad78f9ae-01a4-427c-ab2e-d331d13e579d
 # True As
 
-# ╔═╡ 6b0a5616-dcfd-4899-b0c5-6702ce7e37ed
-img1 = [Gray.(true_As[:, :, i]) for i in 1:size(true_As)[end]]
+# ╔═╡ 4b9c9b0a-d69c-4668-880f-d8f5d06ae67a
+begin
+	# This will display all your true_As in a row, but much larger
+	img1 = [Gray.(true_As[:, :, i]) for i in 1:size(true_As)[end]]
+	plot([plot(img, ticks=false, axis=false, aspect_ratio=:equal) for img in img1]..., 
+	     layout=(1, length(img1)), 
+	     size=(250 * length(img1), 250))
+end
 
 # ╔═╡ 6de64707-a9d9-4afe-96d8-2d78fb74a23e
 # Inferred As
 
 # ╔═╡ 43bf0629-cae3-4c64-8557-58ac44d917dc
-img2 = [Gray.(As_point_estimates[:, :, i]) for i in 1:size(As_point_estimates)[end]]
+begin
+	img2 = [Gray.(As_point_estimates[:, :, i]) for i in 1:size(As_point_estimates)[end]]
+	plot([plot(img, ticks=false, axis=false, aspect_ratio=:equal) for img in img2]..., 
+	     layout=(1, length(img2)), 
+	     size=(250 * length(img2), 250))
+end
 
 # ╔═╡ b4d87a92-1b48-4c39-8e57-0fc5613b61bc
 begin
 	if algo == 1
-		plot(k_likelihoods, xlabel="No. of Clusters", ylabel="log-likelihood", title="Log-likelihood of Point Estimates over clusters")
+		plot(k_likelihoods, xlabel="No. of Clusters", ylabel="Probability", title="Posterior Probability", marker=:circle, legend=false)
 	else
-		histogram(cluster_counts, xlabel="No. of Clusters", ylabel="Frequency", title="DPMM: Frequency of No. of Clusters", bins=length(cluster_counts), xticks=0:1:60)
+		histogram(cluster_counts, xlabel="No. of Clusters", ylabel="Frequency", title="DPMM: Frequency of No. of Clusters", marker=:circle, bins=length(cluster_counts), xticks=0:1:60, legend=false)
 	end
 end
 
 # ╔═╡ dc822a8d-aa13-44d7-9bae-02bd78eecbf4
 md"""
-## Akaike Information Criterion
+## Bayesian Information Criterion
 """
 
 # ╔═╡ aacc9a6e-e4fc-4c61-8f92-3ffcad960978
 begin
 	if algo == 1
-		AICs = zeros(length(Ks))
-		for k in Ks
+		BICs = zeros(length(Ks))
+		for (i, k) in enumerate(Ks)
     		num_params = Testing.count_parameters(k, no_nodes, directed)
-    		AICs[k] = 2 * num_params - 2 * k_likelihoods[k]
+            
+            # Use 'k' if k_likelihoods is a Dict like {2 => -500, 3 => -450}
+			BICs[i] = num_params * log(no_obs) - 2 * k_likelihoods[k] 
 		end
-		plot(AICs, xlabel="No. of Cluster", ylabel="BIC",
-			title="AIC Scores")
+		plot(Ks, BICs, xticks=Ks, xlabel="No. of Clusters", ylabel="BIC", title="BIC Scores", marker=:circle, legend=false)
 	end
 end
 
@@ -154,7 +171,7 @@ md"""
 """
 
 # ╔═╡ b33a6856-798a-4f7b-a777-fd8abe3c63a3
-fix_label_switching = true
+testing = true
 
 # ╔═╡ 48cc5fca-ef6d-4ddd-b819-0905572fa5ca
 begin 
@@ -163,7 +180,7 @@ begin
 	n_obs_values = [20, 50, 100, 200]
 
 	# Includes attempt at fixing label switching problem
-	if fix_label_switching
+	if testing
 		MM_part_data, MM_param_data, MM_network_dist_data, MM_network_cert_data = Testing.generate_plots_data(τ, n_obs_values , no_nodes, burn_in, directed, a_star, b_star, Hu11, Hu01, Hu10, Hu00, γ, alpha_val, base_dist, K, do_calc, algo, π, ρ)
 	end
 
@@ -183,6 +200,7 @@ Testing.gen_x_and_y(MM_network_cert_data, 4, n_obs_values, 2)
 
 # ╔═╡ Cell order:
 # ╟─7aa9240b-da4b-4495-89a8-246ac4af6f83
+# ╟─022aa141-6c7d-4fb6-89f2-f0ff35bd7d4a
 # ╠═eb9a5e3a-31a5-4aec-ab69-3e68b2a95638
 # ╠═f58b4537-55e4-458f-b5f7-ff63415bbcfa
 # ╠═5d1bb53f-82af-4091-ab78-10d1708aba28
@@ -206,7 +224,7 @@ Testing.gen_x_and_y(MM_network_cert_data, 4, n_obs_values, 2)
 # ╠═2dabbb7e-5cb6-4cdd-8214-d2095ad87fbe
 # ╠═04a8b9e3-3909-4ab8-afc8-c9888dc8aa17
 # ╠═ad78f9ae-01a4-427c-ab2e-d331d13e579d
-# ╟─6b0a5616-dcfd-4899-b0c5-6702ce7e37ed
+# ╟─4b9c9b0a-d69c-4668-880f-d8f5d06ae67a
 # ╠═6de64707-a9d9-4afe-96d8-2d78fb74a23e
 # ╟─43bf0629-cae3-4c64-8557-58ac44d917dc
 # ╟─b4d87a92-1b48-4c39-8e57-0fc5613b61bc

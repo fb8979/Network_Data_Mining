@@ -5,7 +5,6 @@ using GraphRecipes, Plots, StatsBase, Distributions, Statistics, StatsPlots, Spe
 
 function __init__()
     # Defer the import until Testing is fully compiled
-    # The '..' refers to the parent module's scope (ClusteringProject)
     @eval using ..FMM, ..DPMM
 end
 
@@ -547,18 +546,7 @@ end
 
 function count_parameters(K, no_nodes, directed)
     mixture_weights = K - 1
-    tpr = K
-    fpr = K
-
-    if directed
-        structures = K * no_nodes * (no_nodes - 1)
-    else
-        structures = K * (no_nodes * (no_nodes - 1)) / 2
-    end
-
-    density = 1
-
-    total = mixture_weights + tpr + fpr + structures + density
+    total = mixture_weights + (2 * K) + 1
 
     return total
 end

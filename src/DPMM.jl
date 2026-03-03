@@ -30,6 +30,8 @@ function DPMM_gibbs_sampling(D, τ, alpha, base_dist, Hu11, Hu01, Hu10, Hu00, a_
     W_u = FMM.calc_W_u(Y_tu, current_Zs, K)
     X_u_ij = FMM.calc_X_u_ij(D, current_Zs, K)
 
+    start_time = time()
+
     # given alpha & state of markov chain sample new parameters
     for i in 2:τ+1
 
@@ -47,8 +49,7 @@ function DPMM_gibbs_sampling(D, τ, alpha, base_dist, Hu11, Hu01, Hu10, Hu00, a_
 
             current_Zs, current_As, current_αs, current_βs, X_u_ij, W_u = remove_obs_from_cluster(current_Zs, D, X_u_ij, Y_tu, W_u, t, current_As, current_αs, current_βs)
 
-            # Minus 1 because of the 0 values mode assignment! check
-            K = length(unique(current_Zs)) - 1
+            K = count(x -> x != 0, unique(current_Zs))
 
             cluster_probs = zeros(Float64, K + 1)
 
@@ -100,7 +101,7 @@ function DPMM_gibbs_sampling(D, τ, alpha, base_dist, Hu11, Hu01, Hu10, Hu00, a_
 
                 # New model parameters generated based off of updated counts
                 current_αs = FMM.calc_new_αs(W_u, Hu11, Hu01, K)
-                current_βs = FMM.calc_new_βs(W_u, Hu10, Hu00, K)
+                current_βs = FMM.calc_new_βs(W_u, Hu00, Hu10, K)
                 current_π = gen_DPMM_π(current_Zs)
                 current_ρ = FMM.calc_new_ρ(current_As, a_star, b_star, K, directed)
 
@@ -116,6 +117,11 @@ function DPMM_gibbs_sampling(D, τ, alpha, base_dist, Hu11, Hu01, Hu10, Hu00, a_
         push!(ρ_samples, current_ρ)
 
     end
+
+    end_time = time()
+    total_time = end_time - start_time
+    ms_per_iteration = (total_time / τ) * 1000
+    #println("TIME TAKEN PER ITERATION:  $(round(ms_per_iteration, digits=4)) ms")
 
     return Zs_samples, As_samples, αs_samples, βs_samples, π_samples, ρ_samples
 end
@@ -289,7 +295,7 @@ function stick_breaking_process(alpha, no_breaks, base_distribution, no_obs)
     end
 
     for i in 1:no_obs
-        push!(assignments, rand(1:no_breaks))
+        push!(assignments, sample(1:no_breaks, Weights(weights)))
     end
 
     assignments = convert.(Int, assignments)
@@ -327,7 +333,7 @@ function calc_prob_rand_A(A, ρ, directed)
     M_star = sum(A)
     n = size(A)[1]
     val = directed ? n * (n - 1) : binomial(n, 2)
-    prob = M_star * log(ρ) + val * log(1 - ρ)
+    prob = M_star * log(ρ) + (val - M_star) * log(1 - ρ)
 
     return exp(prob)
 end

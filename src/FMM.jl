@@ -30,6 +30,7 @@ function gibbs_sampling(τ, init_As, init_Zs, init_αs, init_βs, init_π, init_
     gibbs_samples_likelihoods = []
     Y_tu = 0
 
+    start_time = time()
     # In reality am tkaing τ - 1 samples
 
     for i in 2:τ
@@ -60,6 +61,11 @@ function gibbs_sampling(τ, init_As, init_Zs, init_αs, init_βs, init_π, init_
         ρ_samples[i] = calc_new_ρ(As_samples[i, :, :, :], a_star, b_star, K, directed)
 
     end
+
+    end_time = time()
+    total_time = end_time - start_time
+    ms_per_iteration = (total_time / τ) * 1000
+    #println("TIME TAKEN PER ITERATION:  $(round(ms_per_iteration, digits=4)) ms")
 
     return As_samples, Zs_samples, αs_samples, βs_samples, π_samples, ρ_samples
 
@@ -141,8 +147,7 @@ function calc_likelihood(D, As, Zs, αs, βs, π, ρ, Y_tu, W_u, K, Hu11, Hu01, 
 
     # Calculates the probability of As given θ
     log_prob_A_given_θ = calc_prob_As_given_θ(As, ρ, directed)
-    # Calculates the probability of Zs given θ
-    log_prob_Z_given_θ = calc_prob_Zs_given_θ(Zs, π, K)
+
     # Calculates the probability of the model parameters, θ
     log_prob_θ = calc_prob_θ(K, αs, βs, ρ, π, γ, Hu11, Hu01, Hu10, Hu00, a_star, b_star)
 
@@ -158,20 +163,20 @@ function calc_prob_θ(K, αs, βs, ρ, π, γ, Hu11, Hu01, Hu10, Hu00, a_star, b
         log_prob_αs[u] = log(calc_prob_αs(αs[u], Hu11, Hu01))
     end
 
-    sum_α_probs = logsumexp(log_prob_αs)
+    sum_α_probs = sum(log_prob_αs)
 
     log_prob_βs = zeros(Float64, K)
     for u in 1:K
         log_prob_βs[u] = log(calc_prob_βs(βs[u], Hu10, Hu00))
     end
 
-    sum_β_probs = logsumexp(log_prob_βs)
+    sum_β_probs = sum(log_prob_βs)
 
     log_prob_π = log(calc_prob_π(π, γ, K))
 
     log_prob_ρ = log(calc_prob_ρ(ρ, a_star, b_star))
 
-    return logsumexp([sum_α_probs, sum_β_probs, log_prob_ρ, log_prob_π])
+    return sum([sum_α_probs, sum_β_probs, log_prob_ρ, log_prob_π])
 end
 
 # Calculates the probability of the αs
@@ -209,8 +214,7 @@ function beta_euler_general(γ)
     for i in 1:length(γ)
         val *= gamma(γ[i])
     end
-    val / gamma(sum(γ))
-    return val
+    return val / gamma(sum(γ))
 end
 
 # Calculates the probability of the mode asignments given the model parameters
@@ -295,7 +299,6 @@ function draw_new_modes(X_u_ij, Zs, ρ, αs, βs, K, directed)
             # edges from set t_u_l randomly chosen to be added to the new_A
             for _ in 1:edges_to_add
                 edge = pop!(T_u_ls[u][l])
-                delete!(T_u_ls[u][l], edge)
                 i, j = edge
                 new_As[i, j, u] = 1
             end
@@ -435,7 +438,8 @@ end
 # Calculates a new mixture weighting
 function calc_new_π(Zs, γ, K)
     pseudo_counts = get_mode_counts(Zs, K)
-    pseudo_counts = pseudo_counts + γ
+    γ_k = isempty(γ) ? ones(K) : γ
+    pseudo_counts = pseudo_counts + γ_k
     return rand(Dirichlet(pseudo_counts))
 end
 
@@ -582,12 +586,12 @@ end
 
 # Generates random α values by sampling from beta distribution
 function gen_rand_αs(K, Hu11, Hu01)
-    return αs = rand(Beta(Hu11, Hu01), K)
+    return rand(Beta(Hu11, Hu01), K)
 end
 
 # Generates random β values by sampling from beta distribution
 function gen_rand_βs(K, Hu10, Hu00)
-    return βs = rand(Beta(Hu10, Hu00), K)
+    return rand(Beta(Hu10, Hu00), K)
 end
 
 # Calculates the frequency of the number of clusters in a set of gibbs samples
@@ -721,10 +725,10 @@ function display_results(Zs_PEs, αs_PEs, βs_PEs, π_PE, ρ_PE, opt_k, true_Zs,
 
     ari = randindex(true_Zs, Zs_PEs)
     println("\nVariation of information:  ", Clustering.varinfo(true_Zs, Zs_PEs))
-    println("\nHubert and Arabie adjusted Rand Index:  ", ari[1])
+    println("\nAdjusted Rand Index:  ", ari[1])
     println("\nRand index ( agreement probability):  ", ari[2])
-    println("\nMirkin's index ( disagreement probability):  ", ari[3])
-    println("\nHuberet's index P(agree)-P(disagree):  ", ari[4])
+    #println("\nMirkin's index ( disagreement probability):  ", ari[3])
+    #println("\nHuberet's index P(agree)-P(disagree):  ", ari[4])
     println("\nTrue Zs counts:     ", counts(true_Zs))
     println("Inferred Zs counts: ", counts(Zs_PEs))
 
@@ -760,9 +764,9 @@ function test_gibbs_FMM(D, Ks, τ, Hu11, Hu01, Hu00, Hu10, a_star, b_star, γ, b
         # Gen init rand vals
         init_As, init_Zs, init_αs, init_βs, init_π, init_ρ = gen_init_rand_vals(k, no_measurements, D, a_star, b_star, Hu11, Hu01, Hu10, Hu00)
 
-        γ = ones(k)
+        γ_k = isempty(γ) ? ones(k) : γ
         # Gibbs sampling
-        As_samples, Zs_samples, αs_samples, βs_samples, π_samples, ρ_samples = gibbs_sampling(τ, init_As, init_Zs, init_αs, init_βs, init_π, init_ρ, D, k, Hu11, Hu01, Hu00, Hu10, a_star, b_star, γ, directed, M_ts)
+        As_samples, Zs_samples, αs_samples, βs_samples, π_samples, ρ_samples = gibbs_sampling(τ, init_As, init_Zs, init_αs, init_βs, init_π, init_ρ, D, k, Hu11, Hu01, Hu00, Hu10, a_star, b_star, γ_k, directed, M_ts)
 
         # Calculation of point estimates
         As_PEs, Zs_PEs, αs_PEs, βs_PEs, π_PE, ρ_PE = calc_point_estimates(As_samples, Zs_samples, αs_samples, βs_samples, π_samples, ρ_samples, τ, burn_in, k, directed)
@@ -774,7 +778,7 @@ function test_gibbs_FMM(D, Ks, τ, Hu11, Hu01, Hu00, Hu10, a_star, b_star, γ, b
         W_u = calc_W_u(Y_tu, Zs_PEs, k)
 
         # Calculates the likelihood of inferred model parameters given the data
-        likelihood = calc_likelihood(D, As_PEs, Zs_PEs, αs_PEs, βs_PEs, π_PE, ρ_PE, Y_tu, W_u, k, Hu11, Hu01, Hu10, Hu00, a_star, b_star, γ, directed)
+        likelihood = calc_likelihood(D, As_PEs, Zs_PEs, αs_PEs, βs_PEs, π_PE, ρ_PE, Y_tu, W_u, k, Hu11, Hu01, Hu10, Hu00, a_star, b_star, γ_k, directed)
 
         K_likelihoods[k] = likelihood
         # Update most likely K
@@ -833,7 +837,7 @@ function calc_As_PEs(As_samples, ρ, start, K, τ, directed)
     As_probs = zeros(Float64, n, n, K)
 
     for u in 1:K
-        As_probs[:, :, u] = sum(As_samples[i, :, :, u] for i in start:τ) / (τ - start)
+        As_probs[:, :, u] = sum(As_samples[i, :, :, u] for i in start:τ) / (τ - start + 1)
     end
 
     As_PEs = zeros(Bool, n, n, K)
